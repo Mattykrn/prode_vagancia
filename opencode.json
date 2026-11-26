@@ -25,7 +25,9 @@
       "/ranking/page.tsx *": "allow",
       "/fixture/page.tsx *": "allow",
       "git add *": "allow",
-      "git commit *": "allow"
+      "git commit *": "allow",
+      "git log *": "allow",
+      "git push *": "allow"
     },
     "external_directory": {
       "/tmp/*": "allow"
