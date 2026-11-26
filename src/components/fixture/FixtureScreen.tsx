@@ -6,15 +6,16 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { DEMO_SPY_PREDICTIONS, type MatchdayRecord } from '@/lib/demo-data';
 import {
   formatLockCountdown,
   getMatchdayVisibilityState,
   getPredictionLockState,
   type MatchdayWindow,
+  type MatchdayStatus,
   type MatchStatus,
 } from '@/lib/scoring';
 
+export interface MatchdayRecord { id: string; name: string; status: MatchdayStatus; opens_at: string; closes_at: string | null; }
 export interface MatchItem {
   id: string;
   matchday_id: string;
@@ -126,7 +127,7 @@ function PredictionsSpyModal({
       setError(null);
 
       if (demoMode) {
-        setRows(DEMO_SPY_PREDICTIONS[match.id] ?? []);
+        setRows([]);
         setLoading(false);
         return;
       }
@@ -513,6 +514,13 @@ export function FixtureScreen({
     for (const pred of initialPredictions) {
       map[pred.match_id] = pred;
     }
+    // Asegurar que todos los partidos de la fecha estén en el mapa,
+    // aunque no tengan pronóstico guardado aún
+    for (const match of initialMatches) {
+      if (!map[match.id]) {
+        map[match.id] = { match_id: match.id, pred_home: 0, pred_away: 0, points_earned: 0 } as UserPrediction;
+      }
+    }
     return map;
   });
 
@@ -536,8 +544,8 @@ export function FixtureScreen({
   const matchdayWindow: MatchdayWindow | null = matchday
     ? {
         status: matchday.status,
-        opensAt: matchday.opens_at,
-        closesAt: matchday.closes_at,
+        opens_at: matchday.opens_at,
+        closes_at: matchday.closes_at,
       }
     : null;
 
@@ -549,6 +557,22 @@ export function FixtureScreen({
     () => [...initialMatches].sort((a, b) => a.order_index - b.order_index),
     [initialMatches]
   );
+
+  const editableMatchIds = useMemo(() => {
+    if (!matchdayWindow) return [];
+
+    return sortedMatches
+      .filter((match) => {
+        const lock = getPredictionLockState(
+          match.kickoff_time,
+          match.status,
+          now,
+          matchdayWindow
+        );
+        return lock.canEdit;
+      })
+      .map((m) => m.id);
+  }, [sortedMatches, now, matchdayWindow]);
 
   const dirtyOpenMatchIds = useMemo(() => {
     if (!matchdayWindow) return [];
@@ -575,19 +599,21 @@ export function FixtureScreen({
   }
 
   async function handleSaveAllPredictions() {
-    if (savingAll || dirtyOpenMatchIds.length === 0) return;
+    if (savingAll) return;
 
     setSavingAll(true);
     setBanner(null);
 
-    const payload = dirtyOpenMatchIds.map((matchId) => {
-      const score = drafts[matchId] ?? { home: 0, away: 0 };
+    // Siempre guardar los 10 partidos de la fecha, aunque algunos ya estén guardados
+    const payload = initialMatches.map((match) => {
+      const score = drafts[match.id] ?? { home: 0, away: 0 };
       return {
         user_id: userId,
-        match_id: matchId,
+        match_id: match.id,
         pred_home: score.home,
         pred_away: score.away,
         points_earned: 0,
+        updated_at: new Date().toISOString(),
       };
     });
 
@@ -601,12 +627,13 @@ export function FixtureScreen({
         setSavingAll(false);
         setBanner({
           type: 'error',
-          text: 'No se pudieron guardar los pronósticos. Revisá que ningún partido haya cerrado.',
+          text: `Error guardando pronósticos: ${error.message} (código: ${error.code})`,
         });
         return;
       }
     }
 
+    // Actualizar el savedMap con los nuevos valores
     setSavedMap((prev) => {
       const next = { ...prev };
       for (const row of payload) {
@@ -698,14 +725,14 @@ export function FixtureScreen({
       <div className="sticky top-2 z-30 mb-4 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-2.5 shadow-xl backdrop-blur-md">
         <button
           type="button"
-          disabled={savingAll || dirtyOpenMatchIds.length === 0}
+          disabled={savingAll}
           onClick={handleSaveAllPredictions}
           className="h-11 w-full rounded-xl bg-emerald-500 px-4 text-sm font-extrabold text-zinc-950 transition hover:bg-emerald-400 active:scale-[0.99] disabled:bg-zinc-800 disabled:text-zinc-500"
         >
           {savingAll
             ? 'Guardando cartón...'
-            : dirtyOpenMatchIds.length > 0
-              ? `Guardar Pronósticos (${dirtyOpenMatchIds.length} pendiente${dirtyOpenMatchIds.length > 1 ? 's' : ''})`
+            : editableMatchIds.length > 0
+              ? `Guardar Pronósticos (${editableMatchIds.length} pendiente${editableMatchIds.length > 1 ? 's' : ''})`
               : 'Guardar Pronósticos · Todo al día ✓'}
         </button>
 

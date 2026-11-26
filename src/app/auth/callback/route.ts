@@ -30,20 +30,23 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const origin = resolveOrigin(request);
   const code = searchParams.get('code');
+  const errorDescription = searchParams.get('error_description');
 
   if (!isSupabaseConfigured()) {
-    return NextResponse.redirect(`${origin}/`);
+    return NextResponse.redirect(`${origin}/?error=supabase_not_configured`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/?error=auth_failed`);
+    const err = errorDescription || 'No se recibió código de autorización';
+    return NextResponse.redirect(`${origin}/?error=auth_failed&details=${encodeURIComponent(err)}`);
   }
 
   const supabase = await createServerSupabaseClient();
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
   if (exchangeError) {
-    return NextResponse.redirect(`${origin}/?error=auth_failed`);
+    const errMsg = errorDescription || exchangeError.message || 'Error al intercambiar código';
+    return NextResponse.redirect(`${origin}/?error=auth_failed&details=${encodeURIComponent(errMsg)}`);
   }
 
   const {
@@ -54,13 +57,14 @@ export async function GET(request: Request) {
 
   const { data: allowed } = await supabase
     .from('allowed_users')
-    .select('email')
+    .select('email, is_admin')
     .eq('email', normalizedEmail)
     .maybeSingle();
 
   if (!allowed) {
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/?error=not_allowed`);
+    const errMsg = errorDescription || 'Usuario no está en la lista blanca';
+    return NextResponse.redirect(`${origin}/?error=not_allowed&details=${encodeURIComponent(errMsg)}`);
   }
 
   return NextResponse.redirect(`${origin}/`);

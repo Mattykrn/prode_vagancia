@@ -21,10 +21,6 @@ interface AdminDashboardProps {
   matches: MatchItem[];
 }
 
-
-
-
-
 // ============================================================================
 // SECCIÓN 2: COMPONENTE PRINCIPAL DE GESTIÓN PARA EL ADMINISTRADOR
 // ============================================================================
@@ -66,6 +62,7 @@ export default function AdminDashboard({
     return map;
   });
   const [savingMatchId, setSavingMatchId] = useState<string | null>(null);
+  const [allResultsSaving, setAllResultsSaving] = useState(false);
 
   // Estado whitelist amigos
   const [friendEmail, setFriendEmail] = useState('');
@@ -85,9 +82,14 @@ export default function AdminDashboard({
     [allMatches, selectedMatchdayId]
   );
 
-
-
-
+  // Memo para filtrar matches con resultados cargados
+  const matchesToMemo = useMemo(() => {
+    return matches.filter((m) => {
+      const home = resultsInput[m.id]?.home;
+      const away = resultsInput[m.id]?.away;
+      return home !== '' && away !== '';
+    });
+  }, [matches, resultsInput]);
 
   // ==========================================================================
   // SECCIÓN 3: CREAR FECHA Y CAMBIAR ESTADO (DRAFT -> OPEN -> CLOSED)
@@ -166,10 +168,6 @@ export default function AdminDashboard({
     setStatusNotice(`Estado de "${selectedMatchday.name}" actualizado a ${status}.`);
   };
 
-
-
-
-
   // ==========================================================================
   // SECCIÓN 4: CARGA MASIVA DE HASTA 10 PARTIDOS EN UN CLIC
   // ==========================================================================
@@ -237,10 +235,6 @@ export default function AdminDashboard({
     setStatusNotice(`¡Se cargaron ${inserted.length} partidos correctamente!`);
   };
 
-
-
-
-
   // ==========================================================================
   // SECCIÓN 5: GUARDAR RESULTADO FINAL Y DISPARAR RECÁLCULO AUTOMÁTICO DE PUNTOS
   // ==========================================================================
@@ -293,6 +287,65 @@ export default function AdminDashboard({
     setStatusNotice(`Resultado (${homeScore}-${awayScore}) guardado y tabla recalculada.`);
   };
 
+  const handleSaveAllResults = async () => {
+    setAllResultsSaving(true);
+    setStatusNotice('Guardando todos los resultados...');
+
+    if (matchesToMemo.length === 0) {
+      setStatusNotice('No hay resultados cargados para guardar.');
+      setAllResultsSaving(false);
+      return;
+    }
+
+    if (!demoMode) {
+      const supabase = createClient();
+      const promises = matchesToMemo.map((m) => {
+        const homeScore = Number.parseInt(resultsInput[m.id]?.home ?? '0', 10);
+        const awayScore = Number.parseInt(resultsInput[m.id]?.away ?? '0', 10);
+        return supabase.rpc('set_match_result_and_recalculate', {
+          p_match_id: m.id,
+          p_home_score: homeScore,
+          p_away_score: awayScore,
+        });
+      });
+
+      const results = await Promise.allSettled(promises);
+      const errors = results.filter(
+        (r) => r.status === 'rejected' || (r.status === 'fulfilled' && 'error' in r.value && r.value.error != null)
+      );
+
+      setAllResultsSaving(false);
+
+      if (errors.length > 0) {
+        const errorMsg = errors
+          .map((e) => (e.status === 'rejected' ? e.reason?.message || 'Error desconocido' : e.value?.error?.message || 'Error desconocido'))
+          .filter(Boolean)
+          .join('. ');
+        setStatusNotice(`Errores al guardar algunos resultados: ${errorMsg}`);
+        return;
+      }
+    }
+
+    setAllMatches(
+      allMatches.map((m) =>
+        matchesToMemo.some((ms) => ms.id === m.id)
+          ? {
+              ...m,
+              status: 'FINISHED',
+              home_score: Number(resultsInput[m.id]?.home ?? m.home_score ?? 0),
+              away_score: Number(resultsInput[m.id]?.away ?? m.away_score ?? 0),
+            }
+          : m
+      )
+    );
+
+    setStatusNotice(
+      `Se guardaron ${matchesToMemo.length} resultado(s) y la tabla fue recalculada.`
+    );
+    router.refresh();
+    setAllResultsSaving(false);
+  };
+
   const handleAddFriend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!friendEmail.trim() || !friendNickname.trim()) return;
@@ -317,10 +370,6 @@ export default function AdminDashboard({
     setFriendNickname('');
   };
 
-
-
-
-
   // ==========================================================================
   // SECCIÓN 6: INTERFAZ DE CONTROL DEL DT (ESTÉTICA CANCHA + TIZA)
   // ==========================================================================
@@ -332,6 +381,7 @@ export default function AdminDashboard({
           <h1 className="text-lg font-black text-amber-400">📋 VESTUARIO DT (ADMIN)</h1>
           <p className="text-xs text-slate-400">Control total de fechas, partidos y puntos</p>
         </div>
+
         <Link href="/" className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white">
           ← Volver a Cancha
         </Link>
@@ -446,7 +496,7 @@ export default function AdminDashboard({
           </div>
 
           <p className="text-[11px] text-slate-400">
-            Pegá hasta 10 líneas con formato:{' '}
+            Pegá hasta 10 líneas con formato{' '}
             <code className="text-amber-300">
               Liga | Local vs Visitante | YYYY-MM-DD HH:mm | 2.30 - 3.10 - 2.95
             </code>
@@ -539,6 +589,18 @@ export default function AdminDashboard({
         </div>
       )}
 
+      {matchesToMemo.length > 0 && (
+        <div>
+          <button
+            onClick={handleSaveAllResults}
+            disabled={allResultsSaving}
+            className="w-full rounded-xl bg-emerald-500 py-2.5 text-xs font-black uppercase text-slate-950 transition hover:bg-emerald-400 active:scale-[0.99] disabled:bg-zinc-800 disabled:text-zinc-500"
+          >
+            {allResultsSaving ? 'Guardando todos los resultados...' : `Guardar Todos los Resultados Cargados (${matchesToMemo.length})`}
+          </button>
+        </div>
+      )}
+
       {/* AGREGAR AMIGOS PERMITIDOS */}
       <form
         onSubmit={handleAddFriend}
@@ -575,4 +637,3 @@ export default function AdminDashboard({
     </div>
   );
 }
-

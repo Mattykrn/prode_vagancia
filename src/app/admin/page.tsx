@@ -5,14 +5,10 @@
 import { redirect } from 'next/navigation';
 import AdminDashboard from '@/components/admin/AdminDashboard';
 import { BottomNav } from '@/components/layout/BottomNav';
-import { buildDemoMatchdays, buildDemoMatches } from '@/lib/demo-data';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { LoginScreen } from '@/components/LoginScreen';
 import type { Matchday, MatchItem } from '@/lib/prode-engine';
-
-
-
-
 
 // ============================================================================
 // SECCIÓN 2: GUARD DE SERVIDOR (SI NO ESTÁ LOGUEADO O is_admin !== true -> /)
@@ -22,18 +18,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminPage() {
   if (!isSupabaseConfigured()) {
-    const demoMatchdays = buildDemoMatchdays();
-    const demoMatches = buildDemoMatches();
-
     return (
       <div className="min-h-screen bg-zinc-950">
-        <AdminDashboard
-          demoMode
-          matchdays={demoMatchdays}
-          selectedMatchday={demoMatchdays[0] ?? null}
-          matches={demoMatches}
-        />
-        <BottomNav isAdmin demoMode />
+        <div className="border-b border-emerald-500/20 bg-emerald-500/10 px-4 py-1.5 text-center text-[11px] font-semibold text-emerald-300">
+          Configurá tus credenciales de Supabase en .env.local o Vercel para acceder al panel de administración.
+        </div>
+        <LoginScreen demoMode={false} initialError={"Configure las credenciales de Supabase"} />
       </div>
     );
   }
@@ -84,4 +74,3 @@ export default async function AdminPage() {
     </div>
   );
 }
-

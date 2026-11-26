@@ -6,24 +6,11 @@ import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
 import {
-  DEMO_CURRENT_USER,
-  DEMO_LEADERBOARD_BY_MATCHDAY,
-  DEMO_LEADERBOARD_GENERAL,
-} from '@/lib/demo-data';
-import {
   LeaderboardScreen,
   type LeaderboardEntry,
   type MatchdayLeaderboardGroup,
 } from '@/components/ranking/LeaderboardScreen';
-
-interface MatchdayLeaderboardRow extends LeaderboardEntry {
-  matchday_id: string;
-  matchday_name: string;
-}
-
-
-
-
+import { LoginScreen } from '@/components/LoginScreen';
 
 // ============================================================================
 // SECCIÓN 2: CONSULTA DE VISTAS LEADERBOARD Y RENDER DEL RANKING
@@ -34,11 +21,12 @@ export const dynamic = 'force-dynamic';
 export default async function RankingPage() {
   if (!isSupabaseConfigured()) {
     return (
-      <LeaderboardScreen
-        currentUserId={DEMO_CURRENT_USER.id}
-        generalEntries={DEMO_LEADERBOARD_GENERAL}
-        matchdayGroups={DEMO_LEADERBOARD_BY_MATCHDAY}
-      />
+      <div className="min-h-screen bg-zinc-950">
+        <div className="border-b border-emerald-500/20 bg-emerald-500/10 px-4 py-1.5 text-center text-[11px] font-semibold text-emerald-300">
+          Configurá tus credenciales de Supabase en .env.local o Vercel para ver el ranking.
+        </div>
+        <LoginScreen demoMode={false} initialError={"Configure las credenciales de Supabase"} />
+      </div>
     );
   }
 
@@ -63,7 +51,7 @@ export default async function RankingPage() {
   ]);
 
   const groupMap = new Map<string, MatchdayLeaderboardGroup>();
-  for (const row of (byMatchday as MatchdayLeaderboardRow[]) ?? []) {
+  for (const row of (byMatchday as unknown as { [key: string]: any }[]) ?? []) {
     if (!groupMap.has(row.matchday_id)) {
       groupMap.set(row.matchday_id, {
         matchday_id: row.matchday_id,

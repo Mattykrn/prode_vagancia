@@ -1,10 +1,6 @@
-// ============================================================================
-// SECCIÓN 1: IMPORTACIONES Y TIPOS DE PRODE ARENA (CARTÓN + TABLA + VISTA ADMIN)
-// ============================================================================
-
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   FixtureScreen,
@@ -16,7 +12,8 @@ import {
   type LeaderboardEntry,
   type MatchdayLeaderboardGroup,
 } from '@/components/ranking/LeaderboardScreen';
-import type { MatchdayRecord } from '@/lib/demo-data';
+import { getPredictionLockState, formatLockCountdown } from '@/lib/scoring';
+import type { Matchday } from '@/lib/types';
 
 export interface AdminPredictionAuditRow {
   match_id: string;
@@ -31,7 +28,7 @@ interface ProdeArenaProps {
   demoMode: boolean;
   userId: string;
   isAdmin: boolean;
-  matchday: MatchdayRecord | null;
+  matchday: Matchday | null;
   matches: MatchItem[];
   predictions: UserPrediction[];
   generalLeaderboard: LeaderboardEntry[];
@@ -39,13 +36,6 @@ interface ProdeArenaProps {
   adminAllPredictions?: AdminPredictionAuditRow[];
 }
 
-
-
-
-
-// ============================================================================
-// SECCIÓN 2: COMPONENTE PRINCIPAL ProdeArena (CANCHA + POSICIONES + AUDITORÍA DT)
-// ============================================================================
 
 export function ProdeArena({
   demoMode,
@@ -60,6 +50,37 @@ export function ProdeArena({
 }: ProdeArenaProps) {
   const [activeTab, setActiveTab] = useState<'carton' | 'ranking' | 'audit'>('carton');
   const hasAdminAudit = isAdmin && Array.isArray(adminAllPredictions);
+
+  const [showCountdown, setShowCountdown] = useState(false);
+
+  // Show countdown only when there's an active matchday with closes_at
+  useEffect(() => {
+    if (!matchday?.closes_at) return;
+
+    const closesAt = new Date(matchday.closes_at);
+    const now = new Date();
+    const msUntilClose = closesAt.getTime() - now.getTime();
+
+    if (msUntilClose > 0 && msUntilClose < 24 * 60 * 60 * 1000) {
+      setShowCountdown(true);
+    }
+  }, [matchday?.closes_at]);
+
+  // Compute lock state deterministically from current props
+  // If no matchday is active, the prode is not closed globally
+  const lockReason = matchday && matches[0]
+    ? getPredictionLockState(
+        matches[0].kickoff_time,
+        matches[0].status,
+        new Date(),
+        matchday
+      ).reason
+    : 'OPEN';
+
+  const isProdeClosed = lockReason === 'GLOBAL_CLOSE_REACHED';
+
+  // If there's no active matchday, render a friendly message
+  const noActiveMatchday = !matchday;
 
   return (
     <main className="mx-auto min-h-screen max-w-xl bg-zinc-950 px-4 pb-28 pt-4 text-zinc-100">
@@ -82,6 +103,60 @@ export function ProdeArena({
           </Link>
         )}
       </div>
+
+      {noActiveMatchday && (
+        <div
+          className="mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 p-3 chalk-border"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-amber-400 text-xl font-black">ℹ️</span>
+            <span className="text-zinc-200">
+              <strong>Sin fecha publicada</strong> aún. El administrador debe crear
+              una fecha desde el panel de admin (/admin) para habilitar los
+              pronósticos.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isProdeClosed && !noActiveMatchday && (
+        <div className="mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 p-3 chalk-border">
+          <div className="flex items-center gap-3">
+            <span className="text-amber-400 text-xl font-black">🔒</span>
+            <span className="text-zinc-200">
+              <strong>Prode Cerrado</strong> — Los partidos están en juego. A medida que se
+              carguen los resultados finales sumarás puntos automáticamente.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {!isProdeClosed && !noActiveMatchday && (
+        <div
+          className="mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/40 p-3 chalk-border"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-amber-400 text-xl font-black">⏳</span>
+            {showCountdown && matchday?.closes_at && (
+              <span className="text-sm text-zinc-300">
+                Cierre global a las{' '}
+                <span className="font-mono text-amber-400">
+                  {new Date(matchday.closes_at).toLocaleTimeString('es-AR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })} hs (ARG)
+                </span>
+                hace falta{' '}
+                <span className="font-mono text-amber-400">
+                  {showCountdown ? formatLockCountdown(
+                    new Date(matchday.closes_at).getTime() - new Date().getTime()
+                  ) : ''}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div
         role="tablist"
@@ -126,7 +201,7 @@ export function ProdeArena({
             onClick={() => setActiveTab('audit')}
             className={`h-10 rounded-xl text-xs font-extrabold transition ${
               activeTab === 'audit'
-                ? 'bg-amber-400 text-zinc-950 shadow'
+                ? 'bg-amber-500 text-zinc-950 shadow'
                 : 'text-amber-300/80 hover:text-amber-200'
             }`}
           >
@@ -180,13 +255,17 @@ export function ProdeArena({
                 return (
                   <li
                     key={match.id}
-                    className="rounded-xl border border-white/10 bg-black/40 p-3"
+                    className={`rounded-xl border border-white/10 bg-black/40 p-3 ${
+                      isProdeClosed ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <p className="text-xs font-bold text-white">
                       #{match.order_index} {match.home_team} vs {match.away_team}
                     </p>
-                    {matchPreds.length === 0 ? (
-                      <p className="mt-1 text-[11px] text-zinc-500">Sin pronósticos aún</p>
+                    {isProdeClosed ? (
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        Prode cerrado - Se suman puntos con resultados finales
+                      </p>
                     ) : (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {matchPreds.map((pred) => (
@@ -211,4 +290,3 @@ export function ProdeArena({
 }
 
 export default ProdeArena;
-

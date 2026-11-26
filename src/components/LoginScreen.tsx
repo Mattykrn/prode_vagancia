@@ -7,16 +7,11 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { DEMO_ALLOWED_USERS } from '@/lib/demo-data';
 
 interface LoginScreenProps {
   demoMode?: boolean;
   initialError?: string;
 }
-
-
-
-
 
 // ============================================================================
 // SECCIÓN 2: PANTALLA DE ACCESO PRIVADO CON GOOGLE OAUTH (EL POTRERO PRODE)
@@ -26,22 +21,13 @@ export function LoginScreen({ demoMode = false, initialError }: LoginScreenProps
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | undefined>(initialError);
-  const [demoEmail, setDemoEmail] = useState('admin@gmail.com');
 
   async function handleGoogleLogin() {
     setLoading(true);
     setErrorCode(undefined);
 
     if (demoMode) {
-      const normalized = demoEmail.trim().toLowerCase();
-      const allowed = DEMO_ALLOWED_USERS.some((u) => u.email === normalized);
-
-      if (!allowed) {
-        setLoading(false);
-        setErrorCode('not_allowed');
-        return;
-      }
-
+      // Modo demo: permitimos acceso directo
       router.push('/');
       return;
     }
@@ -56,7 +42,6 @@ export function LoginScreen({ demoMode = false, initialError }: LoginScreenProps
 
     if (error) {
       setErrorCode('auth_failed');
-      setLoading(false);
     }
   }
 
@@ -78,55 +63,13 @@ export function LoginScreen({ demoMode = false, initialError }: LoginScreenProps
           </p>
         </div>
 
-        {errorCode === 'not_allowed' && (
+        {errorCode && (
           <div
             role="alert"
-            className="mb-4 rounded-2xl border border-amber-500/40 bg-amber-500/15 p-3.5 text-center text-sm font-semibold text-amber-200"
+            className="mb-4 rounded-2xl border-zinc-600/40 bg-zinc-600/15 p-3.5 text-center text-sm font-semibold text-zinc-200"
           >
-            Acceso privado: pedile al administrador que agregue tu Gmail
-          </div>
-        )}
-
-        {errorCode === 'auth_failed' && (
-          <div
-            role="alert"
-            className="mb-4 rounded-2xl border border-red-500/40 bg-red-500/15 p-3.5 text-center text-sm text-red-200"
-          >
-            No se pudo completar el inicio de sesión con Google. Intentá de nuevo.
-          </div>
-        )}
-
-        {demoMode && (
-          <div className="mb-4 rounded-2xl border border-white/10 bg-black/40 p-3">
-            <label
-              htmlFor="demo-gmail"
-              className="block text-[11px] font-bold uppercase tracking-wider text-zinc-400"
-            >
-              Simulador de Gmail (Modo Demo Local)
-            </label>
-            <input
-              id="demo-gmail"
-              type="email"
-              value={demoEmail}
-              onChange={(e) => setDemoEmail(e.target.value)}
-              className="mt-1.5 h-10 w-full rounded-xl border border-white/15 bg-zinc-950 px-3 text-sm text-white focus:border-emerald-500 focus:outline-none"
-            />
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setDemoEmail('admin@gmail.com')}
-                className="rounded-lg bg-white/10 px-2 py-1 text-[11px] font-semibold text-emerald-300"
-              >
-                Permitido (admin@gmail.com)
-              </button>
-              <button
-                type="button"
-                onClick={() => setDemoEmail('intruso@gmail.com')}
-                className="rounded-lg bg-white/10 px-2 py-1 text-[11px] font-semibold text-amber-300"
-              >
-                Bloqueado (intruso@gmail.com)
-              </button>
-            </div>
+            <span className="font-bold text-amber-300">{initialError ?? 'Error'}</span>
+            <p className="mt-1 text-xs text-zinc-300">{initialError ?? 'Ocurrió un error'} </p>
           </div>
         )}
 
@@ -162,4 +105,3 @@ export function LoginScreen({ demoMode = false, initialError }: LoginScreenProps
 }
 
 export default LoginScreen;
-

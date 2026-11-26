@@ -1,0 +1,37 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "ls *": "allow",
+      "protected *": "allow",
+      "/fixture/ *": "allow",
+      "npx *": "allow",
+      "echo *": "allow",
+      "git diff *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "sed *": "allow",
+      "cat *": "allow",
+      "mv *": "allow",
+      "npm run build *": "allow",
+      "printf *": "allow",
+      "grep *": "allow",
+      "git checkout *": "allow",
+      "python3 *": "allow",
+      "git status *": "allow",
+      "supabase *": "allow",
+      "rm *": "allow",
+      "/layout.tsx *": "allow",
+      "/ranking/page.tsx *": "allow",
+      "/fixture/page.tsx *": "allow",
+      "git add *": "allow",
+      "git commit *": "allow"
+    },
+    "external_directory": {
+      "/tmp/*": "allow"
+    },
+    "edit": {
+      "*": "allow"
+    }
+  }
+}

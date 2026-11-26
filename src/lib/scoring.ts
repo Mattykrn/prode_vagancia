@@ -17,8 +17,8 @@ export interface MatchScore {
 
 export interface MatchdayWindow {
   status: MatchdayStatus;
-  opensAt: Date | string;
-  closesAt?: Date | string | null;
+  opens_at: Date | string;
+  closes_at?: Date | string | null;
 }
 
 export type LockReason =
@@ -33,8 +33,8 @@ export type LockReason =
 export interface MatchdayVisibilityState {
   isVisibleToPlayers: boolean;
   isAcceptingPredictions: boolean;
-  opensAt: Date;
-  closesAt: Date | null;
+  opens_at: Date;
+  closes_at: Date | null;
   msUntilOpen: number;
   msUntilGlobalClose: number | null;
   reason: 'VISIBLE_OPEN' | 'VISIBLE_CLOSED' | 'DRAFT' | 'NOT_OPEN_YET';
@@ -116,11 +116,14 @@ export function calculatePredictionPoints(
 // SECCIÓN 4: VALIDACIÓN DE VENTANAS DE FECHA (opens_at, closes_at) Y CIERRE -15M
 // ============================================================================
 
-function toValidDate(input: Date | string, label: string): Date {
+function toValidDate(input: Date | string | undefined | null, label: string): Date {
+  if (input == null) {
+    return new Date();
+  }
   const parsed = input instanceof Date ? new Date(input.getTime()) : new Date(input);
 
   if (Number.isNaN(parsed.getTime())) {
-    throw new TypeError(`Fecha inválida para ${label}: ${String(input)}`);
+    return new Date();
   }
 
   return parsed;
@@ -131,9 +134,9 @@ export function getMatchdayVisibilityState(
   now: Date | string = new Date()
 ): MatchdayVisibilityState {
   const nowMs = toValidDate(now, 'now').getTime();
-  const opensAt = toValidDate(matchday.opensAt, 'opensAt');
+  const opensAt = toValidDate(matchday.opens_at, 'opens_at');
   const closesAt =
-    matchday.closesAt != null ? toValidDate(matchday.closesAt, 'closesAt') : null;
+    matchday.closes_at != null ? toValidDate(matchday.closes_at, 'closes_at') : null;
 
   const msUntilOpen = Math.max(0, opensAt.getTime() - nowMs);
   const msUntilGlobalClose =
@@ -143,8 +146,8 @@ export function getMatchdayVisibilityState(
     return {
       isVisibleToPlayers: false,
       isAcceptingPredictions: false,
-      opensAt,
-      closesAt,
+      opens_at: opensAt,
+      closes_at: closesAt,
       msUntilOpen,
       msUntilGlobalClose,
       reason: 'DRAFT',
@@ -155,8 +158,8 @@ export function getMatchdayVisibilityState(
     return {
       isVisibleToPlayers: false,
       isAcceptingPredictions: false,
-      opensAt,
-      closesAt,
+      opens_at: opensAt,
+      closes_at: closesAt,
       msUntilOpen,
       msUntilGlobalClose,
       reason: 'NOT_OPEN_YET',
@@ -171,8 +174,8 @@ export function getMatchdayVisibilityState(
     return {
       isVisibleToPlayers: true,
       isAcceptingPredictions: false,
-      opensAt,
-      closesAt,
+      opens_at: opensAt,
+      closes_at: closesAt,
       msUntilOpen: 0,
       msUntilGlobalClose: 0,
       reason: 'VISIBLE_CLOSED',
@@ -182,8 +185,8 @@ export function getMatchdayVisibilityState(
   return {
     isVisibleToPlayers: true,
     isAcceptingPredictions: true,
-    opensAt,
-    closesAt,
+    opens_at: opensAt,
+    closes_at: closesAt,
     msUntilOpen: 0,
     msUntilGlobalClose,
     reason: 'VISIBLE_OPEN',
@@ -201,23 +204,19 @@ export function getPredictionLockState(
   const matchLockMs = kickoffMs - PREDICTION_LOCK_MS;
 
   const closesAtMs =
-    matchday?.closesAt != null
-      ? toValidDate(matchday.closesAt, 'closesAt').getTime()
+    matchday?.closes_at != null
+      ? toValidDate(matchday.closes_at, 'closes_at').getTime()
       : null;
 
-  const effectiveLockMs =
-    closesAtMs !== null ? Math.min(matchLockMs, closesAtMs) : matchLockMs;
-  const lockAt = new Date(effectiveLockMs);
-
   if (matchday) {
-    const opensAtMs = toValidDate(matchday.opensAt, 'opensAt').getTime();
+    const opensAtMs = toValidDate(matchday.opens_at, 'opens_at').getTime();
 
     if (matchday.status === 'DRAFT') {
       return {
         canEdit: false,
         isLocked: true,
         canSpyPredictions: false,
-        lockAt,
+        lockAt: new Date(nowMs),
         msUntilLock: 0,
         reason: 'MATCHDAY_DRAFT',
       };
@@ -228,7 +227,7 @@ export function getPredictionLockState(
         canEdit: false,
         isLocked: true,
         canSpyPredictions: false,
-        lockAt,
+        lockAt: new Date(nowMs),
         msUntilLock: 0,
         reason: 'MATCHDAY_NOT_OPEN',
       };
@@ -239,22 +238,22 @@ export function getPredictionLockState(
         canEdit: false,
         isLocked: true,
         canSpyPredictions: true,
-        lockAt,
+        lockAt: new Date(nowMs),
         msUntilLock: 0,
         reason: 'MATCHDAY_CLOSED',
       };
     }
-  }
 
-  if (status === 'FINISHED') {
-    return {
-      canEdit: false,
-      isLocked: true,
-      canSpyPredictions: true,
-      lockAt,
-      msUntilLock: 0,
-      reason: 'MATCH_FINISHED',
-    };
+    if (closesAtMs !== null && nowMs >= closesAtMs) {
+      return {
+        canEdit: false,
+        isLocked: true,
+        canSpyPredictions: true,
+        lockAt: new Date(nowMs),
+        msUntilLock: 0,
+        reason: 'GLOBAL_CLOSE_REACHED',
+      };
+    }
   }
 
   if (closesAtMs !== null && nowMs >= closesAtMs) {
@@ -262,9 +261,20 @@ export function getPredictionLockState(
       canEdit: false,
       isLocked: true,
       canSpyPredictions: true,
-      lockAt,
+      lockAt: new Date(nowMs),
       msUntilLock: 0,
       reason: 'GLOBAL_CLOSE_REACHED',
+    };
+  }
+
+  if (status === 'FINISHED') {
+    return {
+      canEdit: false,
+      isLocked: true,
+      canSpyPredictions: true,
+      lockAt: new Date(nowMs),
+      msUntilLock: 0,
+      reason: 'MATCH_FINISHED',
     };
   }
 
@@ -273,7 +283,7 @@ export function getPredictionLockState(
       canEdit: false,
       isLocked: true,
       canSpyPredictions: true,
-      lockAt,
+      lockAt: new Date(nowMs),
       msUntilLock: 0,
       reason: 'LOCKED_CUTOFF',
     };
@@ -283,8 +293,8 @@ export function getPredictionLockState(
     canEdit: true,
     isLocked: false,
     canSpyPredictions: false,
-    lockAt,
-    msUntilLock: effectiveLockMs - nowMs,
+    lockAt: new Date(nowMs),
+    msUntilLock: PREDICTION_LOCK_MS - (nowMs - kickoffMs),
     reason: 'OPEN',
   };
 }

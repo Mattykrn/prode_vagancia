@@ -579,7 +579,7 @@ CREATE POLICY "matches_admin_manage"
   USING (public.is_admin_user())
   WITH CHECK (public.is_admin_user());
 
--- predictions (cierre individual -15m / cierre global + Modo Espía al bloquearse + auditoría admin)
+-- predictions (cierre global por fecha - sin -15m kickoff, solo closes_at)
 DROP POLICY IF EXISTS "predictions_select_own_or_locked" ON public.predictions;
 CREATE POLICY "predictions_select_own_or_locked"
   ON public.predictions
@@ -600,7 +600,6 @@ CREATE POLICY "predictions_select_own_or_locked"
           AND (
             m.status = 'FINISHED'
             OR md.status IN ('CLOSED', 'FINISHED')
-            OR NOW() >= (m.kickoff_time - INTERVAL '15 minutes')
             OR (md.closes_at IS NOT NULL AND NOW() >= md.closes_at)
           )
       )
@@ -625,7 +624,6 @@ CREATE POLICY "predictions_insert_in_window"
         AND NOW() >= md.opens_at
         AND (md.closes_at IS NULL OR NOW() < md.closes_at)
         AND m.status = 'SCHEDULED'
-        AND NOW() < (m.kickoff_time - INTERVAL '15 minutes')
     )
   );
 
@@ -646,7 +644,6 @@ CREATE POLICY "predictions_update_in_window"
         AND NOW() >= md.opens_at
         AND (md.closes_at IS NULL OR NOW() < md.closes_at)
         AND m.status = 'SCHEDULED'
-        AND NOW() < (m.kickoff_time - INTERVAL '15 minutes')
     )
   )
   WITH CHECK (
@@ -662,7 +659,6 @@ CREATE POLICY "predictions_update_in_window"
         AND NOW() >= md.opens_at
         AND (md.closes_at IS NULL OR NOW() < md.closes_at)
         AND m.status = 'SCHEDULED'
-        AND NOW() < (m.kickoff_time - INTERVAL '15 minutes')
     )
   );
 
@@ -678,5 +674,23 @@ INSERT INTO public.allowed_users (email, nickname, is_admin)
 VALUES
   ('admin@gmail.com', 'El Admin', TRUE),
   ('tincho@gmail.com', 'Tincho', FALSE),
-  ('santi@gmail.com', 'Santi', FALSE)
+  ('santi@gmail.com', 'Santi', FALSE),
+  ('matiitoorres06@gmail.com', 'Mati', TRUE)
 ON CONFLICT (email) DO NOTHING;
+
+-- ============================================================================
+-- MIGRACIÓN: Fijar cierre global en la fecha más reciente creada
+-- ============================================================================
+-- Establece el cierre global a mañana viernes 27 de noviembre de 2026
+-- 04:00:00 AM hora Argentina (America/Argentina/Buenos_Aires)
+-- Sobre la fecha más recientemente creada (por created_at), sin importar su
+-- estado actual (DRAFT/OPEN/CLOSED), para garantizar un corte global
+-- consistente en todo el sistema.
+UPDATE public.matchdays
+SET closes_at = '2026-11-27T04:00:00-03:00'::timestamptz,
+    status = 'OPEN'
+WHERE id = (
+  SELECT id FROM public.matchdays
+  ORDER BY created_at DESC
+  LIMIT 1
+);

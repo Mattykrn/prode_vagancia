@@ -5,22 +5,8 @@
 import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
-import {
-  buildDemoMatchdays,
-  buildDemoMatches,
-  DEMO_CURRENT_USER,
-  DEMO_INITIAL_USER_PREDICTIONS,
-  type MatchdayRecord,
-} from '@/lib/demo-data';
-import {
-  FixtureScreen,
-  type MatchItem,
-  type UserPrediction,
-} from '@/components/fixture/FixtureScreen';
-
-
-
-
+import { FixtureScreen, type MatchItem, type UserPrediction } from '@/components/fixture/FixtureScreen';
+import { LoginScreen } from '@/components/LoginScreen';
 
 // ============================================================================
 // SECCIÓN 2: CARGA DE LA FECHA ACTUAL (OPEN / PRÓXIMA) Y LOS 10 PARTIDOS
@@ -30,17 +16,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function FixturePage() {
   if (!isSupabaseConfigured()) {
-    const demoMatchdays = buildDemoMatchdays();
-    const active = demoMatchdays.find((m) => m.status === 'OPEN') ?? demoMatchdays[0] ?? null;
-
     return (
-      <FixtureScreen
-        demoMode
-        userId={DEMO_CURRENT_USER.id}
-        matchday={active}
-        initialMatches={buildDemoMatches()}
-        initialPredictions={DEMO_INITIAL_USER_PREDICTIONS}
-      />
+      <div className="min-h-screen bg-zinc-950">
+        <div className="border-b border-emerald-500/20 bg-emerald-500/10 px-4 py-1.5 text-center text-[11px] font-semibold text-emerald-300">
+          Configurá tus credenciales de Supabase en .env.local o Vercel para acceder al fixture.
+        </div>
+        <LoginScreen demoMode={false} initialError={"Configure las credenciales de Supabase"} />
+      </div>
     );
   }
 
@@ -59,7 +41,7 @@ export default async function FixturePage() {
     .order('created_at', { ascending: false })
     .limit(5);
 
-  const list = (matchdays as MatchdayRecord[]) ?? [];
+  const list = (matchdays as { id: string; name: string; status: string; opens_at: string; closes_at: string }[]) ?? [];
   const currentMatchday =
     list.find((md) => md.status === 'OPEN') ??
     list.find((md) => md.status === 'CLOSED') ??
@@ -100,7 +82,7 @@ export default async function FixturePage() {
     <FixtureScreen
       demoMode={false}
       userId={user.id}
-      matchday={currentMatchday}
+      matchday={currentMatchday as import('@/components/fixture/FixtureScreen').MatchdayRecord}
       initialMatches={(matches as MatchItem[]) ?? []}
       initialPredictions={(predictions as UserPrediction[]) ?? []}
     />
