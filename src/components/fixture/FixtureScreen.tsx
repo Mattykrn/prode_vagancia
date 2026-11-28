@@ -14,6 +14,7 @@ import {
   type MatchdayStatus,
   type MatchStatus,
 } from '@/lib/scoring';
+import { areBetsOpen } from '@/lib/team-normalization';
 
 export interface MatchdayRecord { id: string; name: string; status: MatchdayStatus; opens_at: string; closes_at: string | null; }
 export interface MatchItem {
@@ -270,6 +271,7 @@ function MatchCard({
   savedPrediction,
   isDirty,
   now,
+  betsClosed,
   onChangeDraft,
   onOpenSpy,
 }: {
@@ -279,15 +281,29 @@ function MatchCard({
   savedPrediction?: UserPrediction;
   isDirty: boolean;
   now: Date;
+  betsClosed: boolean;
   onChangeDraft: (matchId: string, next: DraftScore) => void;
   onOpenSpy: (match: MatchItem) => void;
 }) {
-  const lockState = getPredictionLockState(
+  const rawLockState = getPredictionLockState(
     match.kickoff_time,
     match.status,
     now,
     matchdayWindow
   );
+
+  // Si ya pasó el kickoff más temprano de la grilla, forzamos el cierre global
+  // de apuestas aunque este partido en particular todavía no haya arrancado.
+  const lockState =
+    betsClosed && rawLockState.canEdit
+      ? {
+          ...rawLockState,
+          canEdit: false,
+          isLocked: true,
+          msUntilLock: 0,
+          reason: 'LOCKED_CUTOFF' as const,
+        }
+      : rawLockState;
 
   function adjust(side: 'home' | 'away', delta: number) {
     if (!lockState.canEdit) return;
@@ -346,7 +362,9 @@ function MatchCard({
           <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-amber-300">
             {lockState.reason === 'GLOBAL_CLOSE_REACHED'
               ? 'Cierre global'
-              : 'Cerrado (15 min)'}
+              : lockState.reason === 'LOCKED_CUTOFF'
+                ? 'Cierre de apuestas'
+                : 'Cerrado (15 min)'}
           </span>
         )}
       </div>
@@ -558,8 +576,18 @@ export function FixtureScreen({
     [initialMatches]
   );
 
+  // Cierre de apuestas global: se toma el kickoff más temprano de toda la grilla.
+  // Cuando ese instante pasa, ninguna predicción puede crearse ni editarse.
+  const betsClosed = useMemo(() => {
+    if (sortedMatches.length === 0) return false;
+    return !areBetsOpen(
+      sortedMatches.map((match) => ({ kickoff_time: match.kickoff_time })),
+      now
+    );
+  }, [sortedMatches, now]);
+
   const editableMatchIds = useMemo(() => {
-    if (!matchdayWindow) return [];
+    if (!matchdayWindow || betsClosed) return [];
 
     return sortedMatches
       .filter((match) => {
@@ -572,10 +600,10 @@ export function FixtureScreen({
         return lock.canEdit;
       })
       .map((m) => m.id);
-  }, [sortedMatches, now, matchdayWindow]);
+  }, [sortedMatches, now, matchdayWindow, betsClosed]);
 
   const dirtyOpenMatchIds = useMemo(() => {
-    if (!matchdayWindow) return [];
+    if (!matchdayWindow || betsClosed) return [];
 
     return sortedMatches
       .filter((match) => {
@@ -591,7 +619,7 @@ export function FixtureScreen({
         return !saved || saved.pred_home !== draft.home || saved.pred_away !== draft.away;
       })
       .map((m) => m.id);
-  }, [sortedMatches, drafts, savedMap, now, matchdayWindow]);
+  }, [sortedMatches, drafts, savedMap, now, matchdayWindow, betsClosed]);
 
   function handleDraftChange(matchId: string, next: DraftScore) {
     setBanner(null);
@@ -600,6 +628,15 @@ export function FixtureScreen({
 
   async function handleSaveAllPredictions() {
     if (savingAll) return;
+
+    // Si ya pasó el kickoff más temprano de la grilla, no se permite guardar.
+    if (betsClosed) {
+      setBanner({
+        type: 'error',
+        text: 'Las apuestas ya cerraron: pasó el horario del primer partido de la fecha.',
+      });
+      return;
+    }
 
     setSavingAll(true);
     setBanner(null);
@@ -722,18 +759,30 @@ export function FixtureScreen({
         </p>
       </header>
 
+      {betsClosed && (
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3">
+          <span className="text-xl font-black text-amber-400">🔒</span>
+          <span className="text-sm text-zinc-200">
+            <strong>Apuestas cerradas</strong> — Ya arrancó el primer partido de la
+            fecha (kickoff más temprano). No se pueden crear ni editar pronósticos.
+          </span>
+        </div>
+      )}
+
       <div className="sticky top-2 z-30 mb-4 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-2.5 shadow-xl backdrop-blur-md">
         <button
           type="button"
-          disabled={savingAll}
+          disabled={savingAll || betsClosed}
           onClick={handleSaveAllPredictions}
           className="h-11 w-full rounded-xl bg-emerald-500 px-4 text-sm font-extrabold text-zinc-950 transition hover:bg-emerald-400 active:scale-[0.99] disabled:bg-zinc-800 disabled:text-zinc-500"
         >
           {savingAll
             ? 'Guardando cartón...'
-            : editableMatchIds.length > 0
-              ? `Guardar Pronósticos (${editableMatchIds.length} pendiente${editableMatchIds.length > 1 ? 's' : ''})`
-              : 'Guardar Pronósticos · Todo al día ✓'}
+            : betsClosed
+              ? 'Apuestas cerradas · Arrancó el primer partido'
+              : editableMatchIds.length > 0
+                ? `Guardar Pronósticos (${editableMatchIds.length} pendiente${editableMatchIds.length > 1 ? 's' : ''})`
+                : 'Guardar Pronósticos · Todo al día ✓'}
         </button>
 
         {banner && (
@@ -763,6 +812,7 @@ export function FixtureScreen({
               savedPrediction={saved}
               isDirty={isDirty}
               now={now}
+              betsClosed={betsClosed}
               onChangeDraft={handleDraftChange}
               onOpenSpy={setSpyMatch}
             />

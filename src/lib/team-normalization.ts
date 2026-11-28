@@ -372,6 +372,28 @@ export function getNormalizedGrid(): Array<{
 // SECCIÓN EXTRA: CIERRE DE APUESTAS Y HORA LÍMITE
 // ============================================================================
 
+// Offset oficial de Argentina (UTC-3). No hay horario de verano, así que es fijo.
+const ARGENTINA_UTC_OFFSET = '-03:00';
+
+// Convierte un string de kickoff a una Date en UTC de forma consistente.
+// Reglas:
+//   - Con sufijo "Z" (UTC) se parsea tal cual.
+//   - Con offset explícito (ej. "-03:00" o "+02:00") se parsea tal cual.
+//   - Sin offset (ej. "2026-11-28T20:00:00") se interpreta como hora local
+//     de Argentina, agregando "-03:00" antes de parsear.
+function parseKickoffToUtc(kickoffTime: string): Date {
+  const raw = String(kickoffTime ?? '').trim();
+
+  const hasUtcSuffix = /[zZ]$/.test(raw);
+  const hasExplicitOffset = /[+-][0-9]{2}:?[0-9]{2}$/.test(raw);
+
+  if (hasUtcSuffix || hasExplicitOffset) {
+    return new Date(raw);
+  }
+
+  return new Date(raw + ARGENTINA_UTC_OFFSET);
+}
+
 // Calcula la hora límite de apuestas como el partido con kickoff más temprano
 // de la grilla de 15 partidos normalizada
 export function getBettingCutoffTime(grid: Array<{
@@ -379,19 +401,9 @@ export function getBettingCutoffTime(grid: Array<{
 }>): Date | null {
   if (!grid || grid.length === 0) return null;
 
-  // Normalizar todos los kickoff_time a fechas consistentes en UTC.
-  // Si el string no tiene offset de zona horaria, asumimos America/Argentina/Buenos_Aires (-03:00).
-  const dates = grid.map((match) => {
-    const ks = match.kickoff_time;
-    // Si no tiene offset (ej. "2026-11-28T20:00:00"), agregamos -03:00
-    const hasOffset = /-[0-9]{2}:[0-9]{2}$/.test(ks) || /\+[0-9]{2}:[0-9]{2}$/.test(ks);
-    if (hasOffset) {
-      return new Date(ks);
-    }
-    // Agregar offset -03:00 para horarios de Argentina
-    return new Date(ks + "-03:00");
-  });
-  const validDates = dates.filter((d) => !isNaN(d.getTime()));
+  // Normalizar todos los kickoff_time a fechas consistentes en UTC
+  const dates = grid.map((match) => parseKickoffToUtc(match.kickoff_time));
+  const validDates = dates.filter((date) => !isNaN(date.getTime()));
 
   if (validDates.length === 0) return null;
 
@@ -400,10 +412,14 @@ export function getBettingCutoffTime(grid: Array<{
   return sorted[0];
 }
 
-// Calcula el tiempo restante hasta el cierre de apuestas
-export function getTimeUntilCutoff(grid: Array<{
-  kickoff_time: string;
-}>): {
+// Calcula el tiempo restante hasta el cierre de apuestas.
+// La comparación se hace en UTC con getTime() para evitar desfases de zona horaria.
+export function getTimeUntilCutoff(
+  grid: Array<{
+    kickoff_time: string;
+  }>,
+  now: Date = new Date()
+): {
   hours: number;
   minutes: number;
   seconds: number;
@@ -412,10 +428,10 @@ export function getTimeUntilCutoff(grid: Array<{
   const cutoff = getBettingCutoffTime(grid);
   if (!cutoff) return { hours: 0, minutes: 0, seconds: 0, hasPassed: false };
 
-  // Usar UTC de forma explícita para el "now" para consistencia en todos los entornos
-  const now = new Date();
-  const timeUntil = cutoff.getTime() - now.getTime();
-  const hasPassed = now.getTime() >= cutoff.getTime();
+  const nowMs = now.getTime();
+  const cutoffMs = cutoff.getTime();
+  const timeUntil = cutoffMs - nowMs;
+  const hasPassed = nowMs >= cutoffMs;
 
   const hours = Math.max(0, Math.floor(timeUntil / (1000 * 60 * 60)));
   const minutes = Math.max(0, Math.floor((timeUntil % (1000 * 60 * 60)) / (1000 * 60)));
@@ -425,8 +441,11 @@ export function getTimeUntilCutoff(grid: Array<{
 }
 
 // Determina si las apuestas están abiertas o cerradas
-export function areBetsOpen(grid: Array<{
-  kickoff_time: string;
-}>): boolean {
-  return !getTimeUntilCutoff(grid).hasPassed;
+export function areBetsOpen(
+  grid: Array<{
+    kickoff_time: string;
+  }>,
+  now: Date = new Date()
+): boolean {
+  return !getTimeUntilCutoff(grid, now).hasPassed;
 }
