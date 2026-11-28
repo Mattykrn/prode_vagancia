@@ -33,7 +33,18 @@
       "gh repo create *": "allow",
       "env *": "allow",
       "git remote remove *": "allow",
-      "git remote add *": "allow"
+      "git remote add *": "allow",
+      "find *": "allow",
+      "sort *": "allow",
+      "git show *": "allow",
+      "pip3 *": "allow",
+      "mkdir *": "allow",
+      "timeout *": "allow",
+      "true *": "allow",
+      "playwright *": "allow",
+      "xargs *": "allow",
+      "node *": "allow",
+      "wc *": "allow"
     },
     "external_directory": {
       "/tmp/*": "allow"

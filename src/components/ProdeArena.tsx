@@ -13,6 +13,7 @@ import {
   type MatchdayLeaderboardGroup,
 } from '@/components/ranking/LeaderboardScreen';
 import { getPredictionLockState, formatLockCountdown } from '@/lib/scoring';
+import { areBetsOpen } from '@/lib/team-normalization';
 import type { Matchday } from '@/lib/types';
 
 export interface AdminPredictionAuditRow {
@@ -35,7 +36,6 @@ interface ProdeArenaProps {
   matchdayLeaderboards: MatchdayLeaderboardGroup[];
   adminAllPredictions?: AdminPredictionAuditRow[];
 }
-
 
 export function ProdeArena({
   demoMode,
@@ -77,10 +77,40 @@ export function ProdeArena({
       ).reason
     : 'OPEN';
 
-  const isProdeClosed = lockReason === 'GLOBAL_CLOSE_REACHED';
+  // betting cutoff: earliest kickoff among the 15-match grid
+  const betsOpen = areBetsOpen(matches.map((m) => ({
+    kickoff_time: m.kickoff_time,
+  })));
+
+  const isProdeClosed =
+    lockReason === 'GLOBAL_CLOSE_REACHED' || !betsOpen;
 
   // If there's no active matchday, render a friendly message
   const noActiveMatchday = !matchday;
+
+  // State for the countdown timer - initialized empty to avoid hydration mismatch
+  const [countdownText, setCountdownText] = useState<string>('');
+  const [countdownInitialized, setCountdownInitialized] = useState(false);
+
+  // Initialize countdown after first client render
+  useEffect(() => {
+    if (!matchday?.closes_at || countdownInitialized) return;
+
+    const closesAt = new Date(matchday.closes_at);
+    const now = new Date();
+    const msUntilClose = closesAt.getTime() - now.getTime();
+
+    if (msUntilClose > 0 && msUntilClose < 24 * 60 * 60 * 1000) {
+      setShowCountdown(true);
+      // Set the initial countdown text after a small delay to let hydration complete
+      const timer = setTimeout(() => {
+        const remaining = closesAt.getTime() - new Date().getTime();
+        setCountdownText(formatLockCountdown(remaining));
+        setCountdownInitialized(true);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [matchday?.closes_at, countdownInitialized]);
 
   return (
     <main className="mx-auto min-h-screen max-w-xl bg-zinc-950 px-4 pb-28 pt-4 text-zinc-100">
@@ -140,7 +170,7 @@ export function ProdeArena({
             {showCountdown && matchday?.closes_at && (
               <span className="text-sm text-zinc-300">
                 Cierre global a las{' '}
-                <span className="font-mono text-amber-400">
+                <span className="font-mono text-amber-400" suppressHydrationWarning>
                   {new Date(matchday.closes_at).toLocaleTimeString('es-AR', {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -148,9 +178,7 @@ export function ProdeArena({
                 </span>
                 hace falta{' '}
                 <span className="font-mono text-amber-400">
-                  {showCountdown ? formatLockCountdown(
-                    new Date(matchday.closes_at).getTime() - new Date().getTime()
-                  ) : ''}
+                  {countdownText}
                 </span>
               </span>
             )}

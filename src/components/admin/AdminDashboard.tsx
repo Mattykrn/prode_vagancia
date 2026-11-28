@@ -277,6 +277,12 @@ export default function AdminDashboard({
       setSavingMatchId(null);
     }
 
+    // Force refresh to ensure leaderboard and points are updated
+    // after the match result is saved. The supabase trigger
+    // trigger_recalculate_on_match_update should update predictions.points_earned
+    // and the leaderboard tables, but we refresh to be certain.
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     setAllMatches((prev) =>
       prev.map((m) =>
         m.id === matchId
@@ -285,6 +291,30 @@ export default function AdminDashboard({
       )
     );
     setStatusNotice(`Resultado (${homeScore}-${awayScore}) guardado y tabla recalculada.`);
+  };
+
+  const [refreshingLeaderboard, setRefreshingLeaderboard] = useState(false);
+
+  const forceRecalculateLeaderboard = async () => {
+    setRefreshingLeaderboard(true);
+    setStatusNotice('Recalculando tabla de posiciones y puntos...');
+
+    if (!demoMode) {
+      const supabase = createClient();
+      // Run the SQL function to recalculate all leaderboard points
+      const { error } = await supabase.rpc('recalculate_match_points', {
+        p_match_id: null, // null means all matches
+      });
+
+      if (error) {
+        setStatusNotice(`Error al recalcular tabla: ${error.message}`);
+      } else {
+        setStatusNotice(`Tabla de posiciones recalculada correctamente.`);
+      }
+    }
+
+    setRefreshingLeaderboard(false);
+    router.refresh();
   };
 
   const handleSaveAllResults = async () => {
@@ -589,7 +619,7 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {matchesToMemo.length > 0 && (
+{matchesToMemo.length > 0 && (
         <div>
           <button
             onClick={handleSaveAllResults}
@@ -600,7 +630,17 @@ export default function AdminDashboard({
           </button>
         </div>
       )}
-
+      {matchesToMemo.length > 0 && (
+        <div>
+          <button
+            onClick={forceRecalculateLeaderboard}
+            disabled={refreshingLeaderboard}
+            className="w-full rounded-xl bg-indigo-500 py-2.5 text-xs font-black uppercase text-slate-950 transition hover:bg-indigo-400 active:scale-[0.99] disabled:bg-zinc-800 disabled:text-zinc-500"
+          >
+            {refreshingLeaderboard ? 'Recalculando...' : 'Recalcular tabla y puntos'}
+          </button>
+        </div>
+      )}
       {/* AGREGAR AMIGOS PERMITIDOS */}
       <form
         onSubmit={handleAddFriend}
