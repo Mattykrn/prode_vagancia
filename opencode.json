@@ -44,7 +44,8 @@
       "playwright *": "allow",
       "xargs *": "allow",
       "node *": "allow",
-      "wc *": "allow"
+      "wc *": "allow",
+      "git reset *": "allow"
     },
     "external_directory": {
       "/tmp/*": "allow"
